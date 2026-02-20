@@ -1,0 +1,22 @@
+# Data files
+data/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# IDE
+.idea/
+.vscode/
+
+# Environment
+.env
+
+# OS
+.DS_Store
+
+# PDFs
+*.pdf
+
