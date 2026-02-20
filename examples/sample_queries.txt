@@ -1,0 +1,286 @@
+MongoDB Query Tutorial: OpenFDA Drug Adverse Events
+Dataset: ~5000 adverse event reports from the FDA Adverse Event Reporting System (FAERS)
+Database: openfda, Collection: adverse_events
+
+
+Question 1: Which adverse event reports were classified as resulting in patient death?
+
+db.adverse_events.find(
+  { "seriousnessdeath": "1" },
+  { "safetyreportid": 1, "receivedate": 1, "patient.patientsex": 1, "_id": 0 }
+).limit(5)
+
+Output:
+{ safetyreportid: '5801206-7', receivedate: '20080707', patient: { patientsex: '1' } }
+{ safetyreportid: '10003315', receivedate: '20140312', patient: { patientsex: '1' } }
+{ safetyreportid: '10003318', receivedate: '20140312', patient: { patientsex: '2' } }
+{ safetyreportid: '10003336', receivedate: '20140312', patient: { patientsex: '1' } }
+{ safetyreportid: '10003509', receivedate: '20140312', patient: { patientsex: '0' } }
+
+
+Question 2: What drugs appear in adverse events involving patients under 18 years old?
+
+db.adverse_events.aggregate([
+  { $match: { "patient.patientonsetageunit": "801" } },
+  { $addFields: { "numericAge": { $toInt: "$patient.patientonsetage" } } },
+  { $match: { "numericAge": { $lt: 18 } } },
+  { $project: {
+      "safetyreportid": 1,
+      "numericAge": 1,
+      "patient.drug.medicinalproduct": 1,
+      "_id": 0
+  }},
+  { $limit: 5 }
+])
+
+Output:
+{ safetyreportid: '10003357', numericAge: 10, patient: { drug: [{ medicinalproduct: 'TACROLIMUS (WATSON LABORATORIES)' }, { medicinalproduct: 'PREDNISONE' }, { medicinalproduct: 'PREDNISONE' }, { medicinalproduct: 'AZATHIOPRINE' }] } }
+{ safetyreportid: '10003430', numericAge: 10, patient: { drug: [{ medicinalproduct: 'LETAIRIS' }, { medicinalproduct: 'LETAIRIS' }, { medicinalproduct: 'LETAIRIS' }] } }
+{ safetyreportid: '10003517', numericAge: 4, patient: { drug: [{ medicinalproduct: 'LETAIRIS' }, { medicinalproduct: 'LETAIRIS' }] } }
+{ safetyreportid: '10003536', numericAge: 11, patient: { drug: [{ medicinalproduct: 'DEPAKOTE' }, { medicinalproduct: 'DEPAKOTE' }, { medicinalproduct: 'DEPAKOTE' }] } }
+{ safetyreportid: '10003547', numericAge: 16, patient: { drug: [{ medicinalproduct: 'LETAIRIS' }, { medicinalproduct: 'LETAIRIS' }, { medicinalproduct: 'LETAIRIS' }, { medicinalproduct: 'LETAIRIS' }] } }
+
+
+Question 3: What are the 10 most recent adverse event reports in the dataset?
+
+db.adverse_events.find(
+  {},
+  { "safetyreportid": 1, "receivedate": 1, "serious": 1, "_id": 0 }
+).sort({ "receivedate": -1 }).limit(10)
+
+Output:
+{ safetyreportid: '10008323', serious: '2', receivedate: '20140313' }
+{ safetyreportid: '10008322', serious: '2', receivedate: '20140313' }
+{ safetyreportid: '10008321', serious: '2', receivedate: '20140313' }
+{ safetyreportid: '10008320', serious: '2', receivedate: '20140313' }
+{ safetyreportid: '10008319', serious: '2', receivedate: '20140313' }
+{ safetyreportid: '10008318', serious: '2', receivedate: '20140313' }
+{ safetyreportid: '10008317', serious: '2', receivedate: '20140313' }
+{ safetyreportid: '10008316', serious: '2', receivedate: '20140313' }
+{ safetyreportid: '10008315', serious: '2', receivedate: '20140313' }
+{ safetyreportid: '10008314', serious: '2', receivedate: '20140313' }
+
+
+Question 4: How many adverse event reports are classified as serious versus not serious?
+
+db.adverse_events.aggregate([
+  { $group: {
+      _id: "$serious",
+      count: { $sum: 1 }
+  }},
+  { $project: {
+      classification: {
+        $cond: { if: { $eq: ["$_id", "1"] }, then: "Serious", else: "Not Serious" }
+      },
+      count: 1,
+      _id: 0
+  }}
+])
+
+Output:
+{ count: 2530, classification: 'Serious' }
+{ count: 2470, classification: 'Not Serious' }
+
+
+Question 5: Which countries submit the most adverse event reports?
+
+db.adverse_events.aggregate([
+  { $group: {
+      _id: "$primarysource.reportercountry",
+      report_count: { $sum: 1 }
+  }},
+  { $sort: { report_count: -1 } },
+  { $limit: 10 }
+])
+
+Output:
+{ _id: 'US', report_count: 3820 }
+{ _id: 'COUNTRY NOT SPECIFIED', report_count: 172 }
+{ _id: 'GB', report_count: 155 }
+{ _id: 'JP', report_count: 102 }
+{ _id: 'FR', report_count: 91 }
+{ _id: 'IT', report_count: 87 }
+{ _id: 'CA', report_count: 84 }
+{ _id: 'DE', report_count: 77 }
+{ _id: 'NL', report_count: 74 }
+{ _id: 'CN', report_count: 42 }
+
+
+Question 6: What are the 10 most commonly reported adverse reactions across all reports?
+
+db.adverse_events.aggregate([
+  { $unwind: "$patient.reaction" },
+  { $group: {
+      _id: "$patient.reaction.reactionmeddrapt",
+      frequency: { $sum: 1 }
+  }},
+  { $sort: { frequency: -1 } },
+  { $limit: 10 }
+])
+
+Output:
+{ _id: 'Dyspnoea', frequency: 322 }
+{ _id: 'Type 2 diabetes mellitus', frequency: 274 }
+{ _id: 'Drug ineffective', frequency: 226 }
+{ _id: 'Headache', frequency: 207 }
+{ _id: 'Fatigue', frequency: 199 }
+{ _id: 'Dizziness', frequency: 184 }
+{ _id: 'Death', frequency: 170 }
+{ _id: 'Nausea', frequency: 159 }
+{ _id: 'Malaise', frequency: 145 }
+{ _id: 'Pain', frequency: 145 }
+
+
+Question 7: What adverse reactions are most frequently reported for Metformin?
+
+db.adverse_events.aggregate([
+  { $unwind: "$patient.drug" },
+  { $match: {
+      "patient.drug.openfda.generic_name": { $regex: /metformin/i }
+  }},
+  { $unwind: "$patient.reaction" },
+  { $group: {
+      _id: "$patient.reaction.reactionmeddrapt",
+      count: { $sum: 1 }
+  }},
+  { $sort: { count: -1 } },
+  { $limit: 10 }
+])
+
+Output:
+{ _id: 'Drug interaction', count: 8 }
+{ _id: 'Off label use', count: 7 }
+{ _id: 'Nausea', count: 6 }
+{ _id: 'Headache', count: 6 }
+{ _id: 'Dyspnoea', count: 5 }
+{ _id: 'Diarrhoea', count: 5 }
+{ _id: 'Maternal exposure during pregnancy', count: 5 }
+{ _id: 'Pancreatic carcinoma', count: 5 }
+{ _id: 'Fatigue', count: 5 }
+{ _id: 'Abortion', count: 4 }
+
+
+Question 8: Which reports involve patients taking 5 or more concurrent drugs (polypharmacy)?
+
+db.adverse_events.aggregate([
+  { $match: { "patient.drug.4": { $exists: true } } },
+  { $project: {
+      safetyreportid: 1,
+      num_drugs: { $size: "$patient.drug" },
+      drug_names: "$patient.drug.medicinalproduct",
+      _id: 0
+  }},
+  { $sort: { num_drugs: -1 } },
+  { $limit: 5 }
+])
+
+Output:
+{ safetyreportid: '10006589', num_drugs: 66, drug_names: ['OMNISCAN', 'OMNISCAN', 'OMNISCAN', 'OMNISCAN', 'OMNISCAN', 'GADOLINIUM (UNSPECIFIED)', ...] }
+{ safetyreportid: '10008024', num_drugs: 50, drug_names: ['CLOZARIL', 'CLOZARIL', 'RISPERIDONE.', ...] }
+{ safetyreportid: '10005290', num_drugs: 45, drug_names: ['CLOZARIL', 'CLOZARIL', 'SODIUM VALPROATE', ...] }
+{ safetyreportid: '10007523', num_drugs: 44, drug_names: ['THALIDOMIDE', 'THALIDOMIDE', 'MELPHALAN', ...] }
+{ safetyreportid: '10005378', num_drugs: 34, drug_names: ['MABTHERA', 'MYCOPHENOLATE MOFETIL.', ...] }
+
+
+Question 9: Which drug administration routes have the highest proportion of death-related adverse events?
+
+db.adverse_events.aggregate([
+  { $unwind: "$patient.drug" },
+  { $match: { "patient.drug.openfda.route": { $exists: true } } },
+  { $unwind: "$patient.drug.openfda.route" },
+  { $group: {
+      _id: "$patient.drug.openfda.route",
+      total_reports: { $sum: 1 },
+      death_reports: {
+        $sum: { $cond: [{ $eq: ["$seriousnessdeath", "1"] }, 1, 0] }
+      }
+  }},
+  { $match: { total_reports: { $gte: 10 } } },
+  { $addFields: {
+      death_rate: {
+        $round: [{ $multiply: [{ $divide: ["$death_reports", "$total_reports"] }, 100] }, 2]
+      }
+  }},
+  { $sort: { death_rate: -1 } },
+  { $limit: 10 }
+])
+
+Output:
+{ _id: 'INTRACANALICULAR', total_reports: 31, death_reports: 6, death_rate: 19.35 }
+{ _id: 'INTRA-ARTERIAL', total_reports: 69, death_reports: 13, death_rate: 18.84 }
+{ _id: 'INTRAOCULAR', total_reports: 33, death_reports: 6, death_rate: 18.18 }
+{ _id: 'OPHTHALMIC', total_reports: 129, death_reports: 22, death_rate: 17.05 }
+{ _id: 'INTRATHECAL', total_reports: 102, death_reports: 17, death_rate: 16.67 }
+{ _id: 'INTRAVENOUS', total_reports: 1826, death_reports: 286, death_rate: 15.66 }
+{ _id: 'SUBCUTANEOUS', total_reports: 708, death_reports: 107, death_rate: 15.11 }
+{ _id: 'INTRAVITREAL', total_reports: 60, death_reports: 9, death_rate: 15.0 }
+{ _id: 'RECTAL', total_reports: 213, death_reports: 29, death_rate: 13.62 }
+{ _id: 'INTRAPERITONEAL', total_reports: 24, death_reports: 3, death_rate: 12.5 }
+
+
+Question 10: What is the breakdown of adverse event reports by patient sex and by reporter qualification?
+
+db.adverse_events.aggregate([
+  { $facet: {
+      by_sex: [
+        { $group: {
+            _id: "$patient.patientsex",
+            count: { $sum: 1 }
+        }},
+        { $project: {
+            sex: {
+              $switch: {
+                branches: [
+                  { case: { $eq: ["$_id", "1"] }, then: "Male" },
+                  { case: { $eq: ["$_id", "2"] }, then: "Female" }
+                ],
+                default: "Unknown"
+              }
+            },
+            count: 1,
+            _id: 0
+        }},
+        { $sort: { count: -1 } }
+      ],
+      by_reporter: [
+        { $group: {
+            _id: "$primarysource.qualification",
+            count: { $sum: 1 }
+        }},
+        { $project: {
+            qualification: {
+              $switch: {
+                branches: [
+                  { case: { $eq: ["$_id", "1"] }, then: "Physician" },
+                  { case: { $eq: ["$_id", "2"] }, then: "Pharmacist" },
+                  { case: { $eq: ["$_id", "3"] }, then: "Other Health Professional" },
+                  { case: { $eq: ["$_id", "5"] }, then: "Consumer" }
+                ],
+                default: "Unknown"
+              }
+            },
+            count: 1,
+            _id: 0
+        }},
+        { $sort: { count: -1 } }
+      ]
+  }}
+])
+
+Output:
+{
+  by_sex: [
+    { count: 3197, sex: 'Female' },
+    { count: 1469, sex: 'Male' },
+    { count: 307, sex: 'Unknown' },
+    { count: 27, sex: 'Unknown' }
+  ],
+  by_reporter: [
+    { count: 2758, qualification: 'Consumer' },
+    { count: 930, qualification: 'Physician' },
+    { count: 754, qualification: 'Other Health Professional' },
+    { count: 305, qualification: 'Unknown' },
+    { count: 158, qualification: 'Pharmacist' },
+    { count: 95, qualification: 'Unknown' }
+  ]
+}
