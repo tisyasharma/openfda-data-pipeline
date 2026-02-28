@@ -14,7 +14,14 @@ RATE_LIMIT_DELAY = 0.3
 
 
 def fetch_adverse_events(target: int = TARGET_RECORDS) -> list[dict]:
-    """Pull adverse event reports from the OpenFDA drug adverse events endpoint."""
+    """
+    Fetches adverse event records from the OpenFDA API in batches until we hit
+    the target count. If we get rate limited, we wait and retry. Stops early
+    if the API has no more results to return.
+
+    Args:
+        target: total number of records to collect across all pages
+    """
     all_records = []
     skip = 0
 
@@ -48,7 +55,13 @@ def fetch_adverse_events(target: int = TARGET_RECORDS) -> list[dict]:
 
 
 def save_json(records: list[dict], filepath: str) -> None:
-    """Write records to a JSON file and create a compressed zip alongside it."""
+    """
+    Saves the records to a JSON file and creates a zipped copy at the same location.
+
+    Args:
+        records: list of adverse event report dicts to write out
+        filepath: path to write the JSON file — the zip is saved to the same path with a .zip extension
+    """
     with open(filepath, "w") as f:
         json.dump(records, f, indent=2)
 

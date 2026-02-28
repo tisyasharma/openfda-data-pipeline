@@ -14,13 +14,21 @@ INDEXES = [
 
 
 def load_adverse_events(filepath: str, mongo_config: dict = None) -> int:
-    """Read JSON and bulk-insert into MongoDB, then build indexes."""
+    """
+    Loads adverse event records from a JSON file into MongoDB. Clears the existing
+    collection first so re-running doesn't create duplicates. After inserting,
+    creates indexes on the fields we query most.
+
+    Args:
+        filepath: path to the JSON file containing adverse event records
+        mongo_config: optional MongoDB connection config — uses MONGO_CONFIG from config.py if not given
+    """
     config = mongo_config or MONGO_CONFIG
     client = MongoClient(**config)
     db = client[DB_NAME]
     collection = db[COLLECTION_NAME]
 
-    # drop for idempotency
+    # clear existing data so re-running doesn't insert duplicates
     collection.drop()
 
     with open(filepath, "r") as f:

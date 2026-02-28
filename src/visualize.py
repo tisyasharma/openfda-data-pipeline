@@ -9,7 +9,15 @@ from config import BASE_DIR
 
 
 def plot_route_death_rates(results: list[dict], output_path: str) -> None:
-    """Horizontal bar chart comparing death rates across drug administration routes."""
+    """
+    Creates a horizontal bar chart showing death rate by administration route.
+    Each bar is labeled with the number of reports (n) that went into it.
+    The chart is saved to a file instead of shown interactively.
+
+    Args:
+        results: list of dicts from get_death_rate_by_route, each containing _id, death_rate, and total
+        output_path: file path where the chart image will be saved
+    """
     routes = [r["_id"].title() for r in results]
     death_rates = [r["death_rate"] for r in results]
     totals = [r["total"] for r in results]
@@ -33,6 +41,7 @@ def plot_route_death_rates(results: list[dict], output_path: str) -> None:
         fontsize=13,
     )
     ax.invert_yaxis()
+    
     # pad the x-axis so bar labels don't get clipped
     if death_rates:
         ax.set_xlim(right=max(death_rates) * 1.15)

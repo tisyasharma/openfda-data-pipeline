@@ -6,7 +6,7 @@ from config import MONGO_CONFIG, DB_NAME, COLLECTION_NAME
 
 
 class AdverseEventAPI:
-    """Abstraction layer over the OpenFDA adverse events collection in MongoDB."""
+    """Query layer over the OpenFDA adverse events MongoDB collection."""
 
     def __init__(self, mongo_config: dict = None):
         config = mongo_config or MONGO_CONFIG
@@ -14,13 +14,18 @@ class AdverseEventAPI:
         self.db = self.client[DB_NAME]
         self.collection = self.db[COLLECTION_NAME]
 
-    def get_events_by_drug(
-        self,
-        drug_name: str,
-        serious_only: bool = False,
-        limit: int = 20,
-    ) -> list[dict]:
-        """Find adverse event reports where the given drug appears."""
+    def get_events_by_drug(self, drug_name: str, serious_only: bool = False, limit: int = 20,) -> list[dict]:
+        """
+        Returns adverse event reports for a given drug. We search both
+        openfda.generic_name and medicinalproduct since not all records have
+        the openfda fields filled in. Use serious_only=True to only get reports
+        flagged as serious.
+
+        Args:
+            drug_name: partial or full drug name to search for (case-insensitive)
+            serious_only: if True, only returns reports marked as serious
+            limit: maximum number of reports to return
+        """
         query = {
             "$or": [
                 {"patient.drug.openfda.generic_name": {"$regex": drug_name, "$options": "i"}},
@@ -42,13 +47,18 @@ class AdverseEventAPI:
 
         return list(self.collection.find(query, projection).limit(limit))
 
-    def get_reaction_frequency(
-        self,
-        drug_name: str,
-        top_n: int = 15,
-    ) -> list[dict]:
-        """Count how often each reaction appears for a given drug."""
+    def get_reaction_frequency(self, drug_name: str, top_n: int = 15,) -> list[dict]:
+        """
+        Returns the most commonly reported reactions for a given drug, sorted by
+        how often they appear. Each report can have multiple drugs and reactions
+        stored as arrays, so we unwind both to count each reaction on its own.
+
+        Args:
+            drug_name: drug name to filter by (case-insensitive match on openfda.generic_name)
+            top_n: number of reactions to return, sorted by descending frequency
+        """
         pipeline = [
+            # each report has an array of drugs, unwind to filter by name
             {"$unwind": "$patient.drug"},
             {"$match": {
                 "patient.drug.openfda.generic_name": {
@@ -56,6 +66,7 @@ class AdverseEventAPI:
                     "$options": "i",
                 }
             }},
+            # each patient can have multiple reactions, unwind so we count each one
             {"$unwind": "$patient.reaction"},
             {"$group": {
                 "_id": "$patient.reaction.reactionmeddrapt",
@@ -66,14 +77,14 @@ class AdverseEventAPI:
         ]
         return list(self.collection.aggregate(pipeline))
 
-    def get_demographic_breakdown(
-        self,
-        drug_name: Optional[str] = None,
-        group_by: str = "sex",
-    ) -> list[dict]:
+    def get_demographic_breakdown(self, drug_name: Optional[str] = None, group_by: str = "sex",) -> list[dict]:
         """
-        Group adverse events by a demographic dimension (sex, age, or country).
-        Optionally filter to a specific drug first.
+        Groups report counts by sex, age, or country. If a drug name is given,
+        we filter to just that drug's reports before grouping.
+
+        Args:
+            drug_name: optional drug name to filter by before grouping
+            group_by: field to group on — one of "sex", "age", or "country" (defaults to "sex")
         """
         group_field_map = {
             "sex": "$patient.patientsex",
@@ -98,12 +109,16 @@ class AdverseEventAPI:
 
         return list(self.collection.aggregate(pipeline))
 
-    def get_top_drugs_by_event_count(
-        self,
-        serious_only: bool = False,
-        top_n: int = 20,
-    ) -> list[dict]:
-        """Rank drugs by how many adverse event reports they appear in."""
+    def get_top_drugs_by_event_count(self, serious_only: bool = False, top_n: int = 20,) -> list[dict]:
+        """
+        Returns the drugs that appear in the most adverse event reports. NOTE: We group
+        by openfda.generic_name instead of medicinalproduct since the latter is
+        too inconsistently formatted to rely on.
+
+        Args:
+            serious_only: if True, only counts reports marked as serious
+            top_n: how many drugs to return, sorted by report count
+        """
         pipeline = []
         if serious_only:
             pipeline.append({"$match": {"serious": "1"}})
@@ -111,6 +126,7 @@ class AdverseEventAPI:
         pipeline.extend([
             {"$unwind": "$patient.drug"},
             {"$match": {"patient.drug.openfda.generic_name": {"$exists": True}}},
+            # generic_name is an array field, unwind so we can group by individual values
             {"$unwind": "$patient.drug.openfda.generic_name"},
             {"$group": {
                 "_id": "$patient.drug.openfda.generic_name",
@@ -122,18 +138,24 @@ class AdverseEventAPI:
 
         return list(self.collection.aggregate(pipeline))
 
-    def get_death_rate_by_route(
-        self,
-        min_reports: int = 20,
-    ) -> list[dict]:
-        """Compare death rates across drug administration routes."""
+    def get_death_rate_by_route(self, min_reports: int = 20,) -> list[dict]:
+        """
+        Calculates the percentage of reports that included a death outcome, broken
+        down by administration route. Routes with very few reports are filtered out
+        using min_reports to avoid misleading statistics from small samples.
+
+        Args:
+            min_reports: minimum number of reports a route needs to be included in results
+        """
         pipeline = [
             {"$unwind": "$patient.drug"},
             {"$match": {"patient.drug.openfda.route": {"$exists": True}}},
+            # route is an array field, unwind so we can group by each individual route
             {"$unwind": "$patient.drug.openfda.route"},
             {"$group": {
                 "_id": "$patient.drug.openfda.route",
                 "total": {"$sum": 1},
+                # count 1 if the report includes a death, 0 otherwise
                 "deaths": {
                     "$sum": {"$cond": [{"$eq": ["$seriousnessdeath", "1"]}, 1, 0]}
                 },
