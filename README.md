@@ -1,4 +1,4 @@
-# OpenFDA Adverse Events Analysis with MongoDB
+# OpenFDA Adverse Event Data Pipeline
 
 This project explores large-scale biomedical adverse event data using MongoDB as a document store, demonstrating document-oriented data modeling and aggregation pipeline design.
 
@@ -17,6 +17,10 @@ Each adverse event report contains multiple levels of nesting (report > patient 
 - **Consumers file the majority of reports** (2,758), followed by physicians (930) and other health professionals (754).
 
 ![Death Rate by Route](route_death_rates.png)
+
+Results describe patterns within spontaneously submitted FDA safety reports and do not estimate causal or population-level risk.
+
+**Analysis limitation:** Administration-route counts are calculated after unwinding nested drug and route arrays, so a single safety report may contribute multiple observations. These findings are exploratory and should not be interpreted as causal or population-level risk estimates.
 
 ## Architecture Overview
 
